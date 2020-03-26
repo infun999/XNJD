@@ -58,11 +58,6 @@ class Parse:
                 i = i.replace(' ', '|')
                 answers.append(i)
         return answers
-# """
-#
-# 134w2061 ['3', '2', '1', '3', '3', '2', '1', '4', '1', '1', '1', '4', '4', '2', '1', '1', '4', '4', '2', '1', '2|4|5', '1|2|3', '1|2|5', '1|2|3|4|5', '1|2|3|4', '1|2|3|4', '0', '0', '0', '0', '0', '0']
-#
-# """
 
     @staticmethod
     def question_detail(dowork_page):
@@ -400,7 +395,3 @@ class Util:
     @staticmethod
     def split_id(sheetid):
         return sheetid.split('w')
-
-    @staticmethod
-    def classify_finish_state(finish_state):
-        pass
