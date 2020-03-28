@@ -8,40 +8,24 @@
 
 import re, time, json
 from lxml.html import etree
-
-
 """
-class Parse：    解析网页(非实例类）
+class Parse：    解析网页
 class Pipe ：    处理数据存取
 class Form :     构建访问答案页和提交作业等请求的表单
-class Util :     辅助工具(非实例类）
+class Util :     辅助工具
 """
 
 
 # 解析网页
 class Parse:
-    @staticmethod
-    def question_ids(dowork_page):
-        """
-        :param :   做题页面
-        :return: 依次，去重后的题目编号
-        """
-        q_list = []
-        q_nums = re.findall(r'answer_(\w+)', dowork_page)
-        for i in q_nums:
-            if i not in q_list:
-                q_list.append(i)
-        return q_list
-
+    """解析网页数据"""
     @staticmethod
     def answers(answer_page):
         """
         返回正确答案编号列表字符串 like：    "['1', '3', '1', '2', '4']"
-        :param answer_page: 答案页面
-        :return: answer list
         """
         ans = re.findall(r'正确答案：</font>(.*)</td></tr>', answer_page)        # 解析不定项选择错误"B C D"    # 解析判断题"说法错误"---0，”说法正确“---1
-        answers =[]
+        answers = []
         for i in ans:
             if len(i) == 1:
                 answers.append(str(ord(i)-64))
@@ -60,6 +44,22 @@ class Parse:
         return answers
 
     @staticmethod
+    def question_ids(dowork_page):
+        """返回:去重后，带小题目有序编号"""
+        q_list = []
+        q_nums = re.findall(r'answer_(\w+)', dowork_page)
+        for i in q_nums:
+            if i not in q_list:
+                q_list.append(i)
+        return q_list
+
+    @staticmethod
+    def work_title(dowork_page):
+        """仅适用undo, unfinish , nodo页面，返回当前作业标题"""
+        e = etree.HTML(dowork_page)
+        return str(e.xpath('//form//td//td//td/text()')[0])     # 此XPATH接近于取题目表述
+
+    @staticmethod
     def question_detail(dowork_page):
         """
         解析问题描述
@@ -70,11 +70,7 @@ class Parse:
 
     @staticmethod
     def sheet_info(dowork_page,):
-        """
-        返回 {sheet_info}
-        :param :
-        :return:
-        """
+        """题目页面综合信息"""
         sheet_info = {}
         e = etree.HTML(dowork_page)
         sheet_info["course_code"] = str(e.xpath('//*[@id="glo_course_code"]/@value')[0])
@@ -87,11 +83,7 @@ class Parse:
 
     @staticmethod
     def user_ccs(dowork_page):
-        """
-        返回 {user_info}
-        :param
-        :return: user_info
-        """
+        """用户基本信息center_code,class_code,student_code"""
         user_ccs = {}
         e = etree.HTML(dowork_page)
         user_ccs["student_id"] = str(e.xpath('//*[@id="glo_student_id"]/@value')[0])
@@ -101,6 +93,7 @@ class Parse:
 
     @staticmethod
     def sheetids(worklist_page):
+        """本学期所有作业编号like：24w96格式(从作业列表页面,url中获取)"""
         sheetids = list()
         e = etree.HTML(worklist_page)
         # 所有作业的url list
@@ -114,15 +107,17 @@ class Parse:
         return sheetids
 
     @staticmethod
-    def finish_state(worklist_page,):
+    def finish_state(worklist_page):
+        """用户作业完成状态"""
         sheetids = Parse.sheetids(worklist_page)
         undo_list = []
         unfinish_list = []
         finish_state = {}
+        nodo_list = []
         e = etree.HTML(worklist_page)
         total = e.xpath('//*[@id="courseList"]//td[3]')
 
-        undid = e.xpath('//*[@id="courseList"]//td[5]')
+        undo = e.xpath('//*[@id="courseList"]//td[5]')
         did = e.xpath('//*[@id="courseList"]//td[5]/span')
         j = 0
         for i in range(len(total)):
@@ -131,7 +126,7 @@ class Parse:
             t = n[0]    # 总量
             s = n[7]    # 客观题量
             # 未做作业或 完成题数为0
-            if undid[i].text.strip():
+            if undo[i].text.strip():
                 d = '0'  # 未做过作业，完成数量设为0
             else:
                 d = re.sub(r'[\u4e00-\u9fa5]', "", did[j].text).strip()    # 完成题目数量
@@ -140,14 +135,16 @@ class Parse:
             # finish_state      sheetid|总量|客观题量|已完成量
             if s != '0' and d == '0':
                 undo_list.append(sheetids[i])
-            if s != d and d != '0':
+            elif s != d and d != '0':
                 unfinish_list.append(sheetids[i])
-        return undo_list, unfinish_list, finish_state
+            elif s == '0':
+                nodo_list.append(sheetids[i])
+        return undo_list, unfinish_list, finish_state, nodo_list
 
 
 # 处理数据存取
 class Pipe:
-    """外部与数据库的中间交互层方法"""
+    """处理内存与数据库的传输和格式转换"""
     __instance = None
     __init_flag = True
 
@@ -178,21 +175,19 @@ class Pipe:
     def out_pw(self, userid):
         return self.db.get_item(table_name="users", loc_key="userid", loc_value=userid, search_key="pw")
 
-    # def in_capt_str(self, hash_c, capt_str):
-    #     self.db.set_item("captcha", "hash_c", hash_c, "capt_str", capt_str)
-    #
-    # def out_capt_str(self, hash_c):
-    #     self.db.set_item("captcha", "hash_c", hash_c, "capt_str", )
-    #
-    # def in_capt_code(self, hash_c, capt_code):
-    #     self.db.set_item("captcha", "hash_c", hash_c, "capt_code", capt_code)
-    #
-    # def out_capt_code(self, hash_c):
-    #     self.db.set_item("captcha", "hash_c", hash_c, "capt_code", )
+    def in_capt_str(self, capt_hash, capt_str):
+        self.db.set_item("captcha", "capt_hash", capt_hash, "capt_str", capt_str)
 
+    def out_capt_str(self, capt_hash):
+        self.db.get_item("captcha", "capt_hash", capt_hash, "capt_str", )
 
+    def in_capt_code(self, capt_hash, capt_code):
+        self.db.set_item("captcha", "capt_hash", capt_hash, "capt_code", capt_code)
 
-# 处理列表--字符串类型
+    def out_capt_code(self, capt_hash):
+        self.db.get_item("captcha", "capt_hash", capt_hash, "capt_code", )
+
+    # 处理列表--字符串类型
     def in_quetion_ids(self, sheetid, question_ids: list):
         q_ids = question_ids.__str__()
         self.db.set_item("sheets", "sheetid", sheetid, "question_ids", q_ids)
@@ -248,11 +243,11 @@ class Pipe:
         r = json.loads(_) if _ else {}
         return r
 
-    # 检查是否初始化row
+    # 特殊方法：检查是否初始化row
     """因数据库底层方法是用update来实现的set_xxx，至少需要loc_key，loc_value的初始值"""
-    def init_db_if_not_exist(self, loc_key: str, loc_value):
+    def init_db_if_not_exist(self, create_key: str, set_ori_value):
         """
-        loc_key:指定"userid"\"sheetid"\"hash_c"\"hash_q"
+        create_key:指定"userid"\"sheetid"\"hash_cap"\"hash_q"
         :param loc_key:     自定义各表唯一定位关键字段
         :param loc_value:   自定义各表唯一定位关键值
         :return:
@@ -260,20 +255,27 @@ class Pipe:
         d = {
             "userid": "users",
             "sheetid": "sheets",
-            "hash_c": "captcha",
-            "hash_q": "qa_detail"
+            "capt_hash": "captcha",
+            "quest_hash": "qa_detail"
         }
-        row = self.db.get_row(d[loc_key], loc_key, loc_value)
+        row = self.db.get_row(d[create_key], create_key, set_ori_value)
         if not row:
-            self.db.init_row(d[loc_key], loc_key, loc_value)
+            self.db.init_row(d[create_key], create_key, set_ori_value)
 
+    # 特殊方法： 查询字段列
+    def get_item_column(self, search_table, search_item):
+        table = self.db.get_table(table_name=search_table)
+        for row in table:
+            yield row[search_item]
 
-
+    # 特殊方法: 删除验证码code
+    def del_capt_code(self, capt_hash):
+        self.db.del_item("captcha", "capt_hash", capt_hash, "capt_code")
 
 
 # 构建表单
 class Form:
-    """访问数据库获取信息构建表单"""
+    """处理数据构建网页请求表单"""
     __instance = None
     __init_flag = True
 
@@ -288,6 +290,7 @@ class Form:
         Form.__init_flag = False
 
     def base(self, userid, sheetid):
+        """用户所有作业通用的基本表单"""
         user_ccs = self.pipe.out_user_ccs(userid)
         sheet_info = self.pipe.out_sheet_info(sheetid)
         t = str(time.asctime(time.localtime()))
@@ -304,6 +307,7 @@ class Form:
         return form
 
     def temp_save(self, userid):
+        """提交临时保存时，需附加在基本表单base上，（用于模拟点击选项时的临时保存）"""
         user_ccs = self.pipe.out_user_ccs(userid)
         form = {
             "method": "savetmpontime",
@@ -315,6 +319,7 @@ class Form:
 
     @property
     def submit_all(self):
+        """提交最终作业，需附加在基本表单base上（用于最终提交）"""
         form = {
             "method": "submithomework",
             "center_code": "",
@@ -326,6 +331,7 @@ class Form:
 
     @property
     def submit_null(self):
+        """提交临时保存时，需附加在基本表单base上（提交请求后，再访问答案页面获取答案）"""
         form = {
             "method": "submithomework",
             "center_code": "",
@@ -336,6 +342,7 @@ class Form:
         return form
 
     def post_answer(self, sheetid)->dict:
+        """pipe_out数据，调用专门处理方法handle_answers：构建提交格式的答案"""
         question_ids = self.pipe.out_question_ids(sheetid)
         answers = self.pipe.out_answers(sheetid)
         sheet_info = self.pipe.out_sheet_info(sheetid)
@@ -357,7 +364,6 @@ class Util:
         :param all_type: 内建题目类型 # all_type = '1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|1|4|5|5|5|5'
         :return: 符合提交作业的答题form表单
         """
-
         try:
             ans_d = {}
             questions = [re.findall(r'(\d+)', q)[0] for q in questions]  # 保留主题目编号
@@ -391,7 +397,36 @@ class Util:
         except:
             return None
 
+    @staticmethod
+    def manual_handle_question_ids(all_ex, all_type):
+        """
+        （做过，但是未完成的work，需要人工辅助处理，构建题目list）方法中默认不定项选择为5个选项。带子题目的大题，需要手动输入子题目数量
+        :param all_ex: 题目编号
+        :param all_type: 题型
+        :return: 统一格式的question_ids
+        """
+        q_ids = []
+        all_ex = all_ex.split('|')
+        all_type = all_type.split('|')
+        le = len(all_type)
+        k = 0
+        for i in range(le):
+            if all_type[i] in ['1', '3']:  # 单选、判断题计1个， 主观题抛弃
+                q_ids.append(all_ex[i])
+            elif all_type[i] == '2':  # 不定项(默认5个选项）计5个
+                for j in range(5):
+                    q_ids.append(all_ex[i] + '_' + str(j + 1))
+            elif all_type[i] == '5':  # 多子选择题目 大题， 人工确定个数
+                k += 1
+                c = input('输入第{}个大题{}(type=5的第{}个题)的子题目个数'.format(i + 1, all_ex[i], k))
+                for j in range(int(c)):
+                    q_ids.append(all_ex[i] + '_' + str(j + 1))
+        return q_ids
+
     # 分割sheetid为课程号和作业号
     @staticmethod
     def split_id(sheetid):
         return sheetid.split('w')
+
+
+

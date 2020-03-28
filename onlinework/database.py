@@ -26,10 +26,20 @@ class XNJD:
         self.xnjd = self.client.xnjd
         XNJD.__init_flag = False
 
-    def init_row(self, table_name, loc_key, loc_value):
+    def init_row(self, table_name, create_key, set_ori_value):
         """以loc_value关键值的初始row"""
-        set_data = {str(loc_key): loc_value}
+        set_data = {str(create_key): set_ori_value}
         return self.xnjd[table_name].insert_one(set_data).inserted_id
+
+    def get_table(self, table_name: str):
+        """获取table中字段"""
+        try:
+            r = self.xnjd[table_name].find()
+        except TypeError:
+            r = None
+        except KeyError:
+            r = None
+        return r
 
     def get_row(self, table_name: str, loc_key: str, loc_value: str):
         """返回整行数据:dict"""

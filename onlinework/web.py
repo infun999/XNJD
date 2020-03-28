@@ -8,6 +8,9 @@
 import random
 from lxml.html import etree
 import requests
+"""
+web.py  登录用户，访问基本页面接口
+"""
 
 def _create_session():
     session = requests.session()
@@ -19,11 +22,10 @@ def _create_session():
     session.headers = headers
     return session
 
-def login(username, passw):
+
+def login(userid, passw):
     """
     传入用户名和密码，返回登录后session
-    :param username: 用户账号
-    :param passw: 密码
     :return: 登录后session
     """
     session = _create_session()
@@ -34,7 +36,7 @@ def login(username, passw):
     execution = e.xpath('//td/input[@type="hidden"][2]/@value')[0]
     _eventId = e.xpath('//td/input[@type="hidden"][3]/@value')[0]
     login_fd = {
-        'username': username,
+        'username': userid,
         'password': passw,
         'lt': lt,
         'execution': execution,
@@ -45,7 +47,11 @@ def login(username, passw):
     resp = session.post(url, data=login_fd).text
     if '学习园地' not in resp:
         return None
-    return username, session
+    return userid, session
+
+
+def split_id(sheetid):
+    return sheetid.split('w')
 
 
 class Page:
@@ -55,69 +61,33 @@ class Page:
 
     @property
     def worklist(self):
+        """作业列表页面"""
         url = 'http://study.xnjd.cn/study/Homework_list.action'
         return self.session.get(url=url).text
 
-    def dowork(self, courseid: str, homeworkid: str)->str:
-        """
-        :param courseid: 课程编号
-        :param homeworkid: 作业编号
-        :return: 作业题目详情页
-        """
-        url = 'http://cs.xnjd.cn/course/exercise/Student_doIt.action?courseId={}&homeworkId={}'.format(courseid, homeworkid)
+    def dowork(self, sheetid: str)->str:
+        """作业题目详情页"""
+        course, work = split_id(sheetid)
+        url = 'http://cs.xnjd.cn/course/exercise/Student_doIt.action?courseId={}&homeworkId={}'.format(course, work)
         return self.session.get(url=url).text
 
-    def answer(self, coruseid: str, homeworkid: str)->str:
+    def answer(self, sheetid: str)->str:
         """
         紧序在提交ajax_null或者ajax_all后访问
-        :param coruseid:
-        :param homeworkid:
-        :return:
+        :return: 答案页面
         """
-        url = 'http://cs.xnjd.cn/course/exercise/Student_history.action?courseId={}&homeworkId={}'.format(coruseid, homeworkid)
+        course, work = split_id(sheetid)
+        url = 'http://cs.xnjd.cn/course/exercise/Student_history.action?courseId={}&homeworkId={}'.format(course, work)
         return self.session.get(url=url).text
 
-    def captcha(self, courseid: str):
-        """
-        返回response.content字节流
-        :param courseid: 课程编号
-        :return: 图片字节流
-        """
-        url = 'http://cs.xnjd.cn/course/exercise/Student_validationCode.action?courseId={}&k={}'.format(courseid, str(random.random()))
+    def captcha(self, sheetid: str):
+        """返回验证码content字节流"""
+        course = split_id(sheetid)[0]
+        url = 'http://cs.xnjd.cn/course/exercise/Student_validationCode.action?courseId={}&k={}'.format(course, str(random.random()))
         # 经302，带jsession id后获取验证码图片，注册在服务器中，session域最近唯一有效
         return self.session.get(url=url).content
 
     def ajax_post(self, form_data):
+        """做题核心请求"""
         url = 'http://cs.xnjd.cn/course/exercise/Ajax_stusavetmp.action?'
         return self.session.post(url=url, data=form_data)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
